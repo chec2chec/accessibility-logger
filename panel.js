@@ -10,6 +10,8 @@ class AccessibilityLogger {
         this.isLoggingEnabled = true;
         this.announcementQueue = [];
         this.pollingInterval = null;
+        this.connectionEstablished = false;
+        this.currentTabId = null;
         
         this.init();
     }
@@ -23,6 +25,7 @@ class AccessibilityLogger {
         this.setupKeyboardNavigation();
         this.connectToContentScript();
         this.startPollingForEvents();
+        this.setupNavigationMonitoring();
         this.updateStatus();
     }
 
@@ -56,6 +59,71 @@ class AccessibilityLogger {
                 this.onPanelShown();
             }
         });
+    }
+
+    /**
+     * Monitor navigation changes to maintain connection
+     */
+    setupNavigationMonitoring() {
+        // Check for navigation changes periodically
+        let lastUrl = '';
+        const navigationCheckInterval = setInterval(() => {
+            chrome.devtools.inspectedWindow.eval(`window.location.href`, (result, isException) => {
+                if (!isException && result !== lastUrl) {
+                    if (lastUrl !== '') {
+                        console.log('Navigation detected from', lastUrl, 'to', result);
+                        this.handleNavigation(result);
+                    }
+                    lastUrl = result;
+                }
+            });
+        }, 1000); // Check every second
+
+        // Store interval for cleanup
+        this.navigationCheckInterval = navigationCheckInterval;
+    }
+
+    /**
+     * Handle navigation to maintain logging
+     */
+    handleNavigation(newUrl) {
+        console.log('Handling navigation to:', newUrl);
+        
+        // Don't clear existing logs on navigation - keep them for comparison
+        // But do add a navigation marker
+        this.addNavigationMarker(newUrl);
+        
+        // Re-establish connection after a short delay to allow page to load
+        setTimeout(() => {
+            this.reconnectAfterNavigation();
+        }, 1000);
+    }
+
+    /**
+     * Add a navigation marker to the log
+     */
+    addNavigationMarker(url) {
+        const navigationEvent = {
+            id: Date.now() + Math.random(),
+            type: 'navigation',
+            timestamp: Date.now(),
+            element: null,
+            details: {
+                url: url,
+                marker: true
+            }
+        };
+        
+        this.addLogEntry(navigationEvent);
+    }
+
+    /**
+     * Reconnect to content script after navigation
+     */
+    reconnectAfterNavigation() {
+        console.log('Reconnecting after navigation...');
+        this.connectionEstablished = false;
+        this.connectToContentScript();
     }
 
     /**
@@ -123,26 +191,64 @@ class AccessibilityLogger {
 
     /**
      * Connect to content script for accessibility event monitoring
-     * This now just enables monitoring in the content script
      */
     connectToContentScript() {
-        // Send a message to the content script to start monitoring
-        chrome.devtools.inspectedWindow.eval(`
-            // Signal to content script that DevTools panel is ready
-            (function() {
-                window.postMessage({
-                    type: 'DEVTOOLS_PANEL_READY',
-                    source: 'accessibility-logger'
-                }, '*');
-                console.log('Accessibility Logger: DevTools panel ready signal sent');
-            })();
-        `, (result, isException) => {
-            if (isException) {
-                console.error('Failed to signal content script:', isException);
+        console.log('Establishing DevTools connection...');
+        this.currentTabId = chrome.devtools.inspectedWindow.tabId;
+        
+        // Immediately send the devtools-ready signal
+        this.sendDevToolsReadySignal();
+        
+        // Also try after a short delay to ensure everything is loaded
+        setTimeout(() => {
+            if (!this.connectionEstablished) {
+                this.sendDevToolsReadySignal();
+            }
+        }, 500);
+        
+        // And periodically retry if connection isn't established
+        const connectionRetryInterval = setInterval(() => {
+            if (!this.connectionEstablished) {
+                console.log('Retrying DevTools connection...');
+                this.sendDevToolsReadySignal();
+            } else {
+                clearInterval(connectionRetryInterval);
+            }
+        }, 3000); // Retry every 3 seconds
+        
+        // Store interval for cleanup
+        this.connectionRetryInterval = connectionRetryInterval;
+        
+        // Stop retrying after 30 seconds
+        setTimeout(() => {
+            if (this.connectionRetryInterval) {
+                clearInterval(this.connectionRetryInterval);
+                this.connectionRetryInterval = null;
+            }
+        }, 30000);
+    }
+
+    /**
+     * Send DevTools ready signal to background script
+     */
+    sendDevToolsReadySignal() {
+        const tabId = chrome.devtools.inspectedWindow.tabId;
+        console.log('Sending DevTools ready signal for tab:', tabId);
+        
+        chrome.runtime.sendMessage({
+            action: 'devtools-ready',
+            tabId: tabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Failed to notify background script:', chrome.runtime.lastError);
                 this.updateConnectionStatus(false);
             } else {
-                console.log('DevTools panel ready signal sent successfully');
+                console.log('Successfully notified background script that DevTools is ready:', response);
+                this.connectionEstablished = true;
                 this.updateConnectionStatus(true);
+                
+                // Process any queued events in storage immediately
+                this.fetchEventsFromStorage();
             }
         });
     }
@@ -151,9 +257,10 @@ class AccessibilityLogger {
      * Start polling for events from chrome.storage
      */
     startPollingForEvents() {
+        console.log('Starting to poll for events...');
         this.pollingInterval = setInterval(() => {
             this.fetchEventsFromStorage();
-        }, 1000); // Poll every second
+        }, 300); // Poll every 300ms for very responsive logging
     }
 
     /**
@@ -167,18 +274,40 @@ class AccessibilityLogger {
             }
 
             const events = result.accessibilityEvents || [];
-            const newEvents = events.filter(event => 
-                !this.logEntries.some(existing => existing.id === event.id)
-            );
+            
+            if (events.length > 0) {
+                const newEvents = events.filter(event => 
+                    !this.logEntries.some(existing => existing.id === event.id)
+                );
 
-            newEvents.forEach(event => {
-                this.addLogEntry(event);
-            });
+                if (newEvents.length > 0) {
+                    console.log('Processing new events:', newEvents.length);
+                    
+                    newEvents.forEach(event => {
+                        this.addLogEntry(event);
+                    });
 
-            // Clear processed events from storage to prevent re-processing
-            if (newEvents.length > 0) {
-                chrome.storage.local.set({ accessibilityEvents: [] });
+                    // Mark events as processed
+                    this.markEventsAsProcessed(newEvents);
+                }
             }
+        });
+    }
+
+    /**
+     * Mark events as processed to avoid re-processing
+     */
+    markEventsAsProcessed(processedEvents) {
+        chrome.storage.local.get(['accessibilityEvents'], (result) => {
+            if (chrome.runtime.lastError) return;
+            
+            const allEvents = result.accessibilityEvents || [];
+            const processedIds = new Set(processedEvents.map(e => e.id));
+            
+            // Remove processed events from storage
+            const remainingEvents = allEvents.filter(event => !processedIds.has(event.id));
+            
+            chrome.storage.local.set({ accessibilityEvents: remainingEvents });
         });
     }
 
@@ -188,6 +317,8 @@ class AccessibilityLogger {
     addLogEntry(eventData) {
         if (!this.isLoggingEnabled) return;
 
+        console.log('Adding log entry:', eventData.type, eventData);
+
         const entry = {
             id: eventData.id || (Date.now() + Math.random()),
             ...eventData,
@@ -196,6 +327,7 @@ class AccessibilityLogger {
 
         // Check if entry already exists
         if (this.logEntries.some(existing => existing.id === entry.id)) {
+            console.log('Event already exists, skipping:', entry.id);
             return;
         }
 
@@ -214,13 +346,18 @@ class AccessibilityLogger {
      */
     renderLogEntry(entry) {
         const entryElement = document.createElement('div');
-        entryElement.className = 'log-entry';
+        entryElement.className = 'log-entry new-entry';
         entryElement.tabIndex = 0;
         entryElement.setAttribute('data-entry-id', entry.id);
         entryElement.setAttribute('role', 'option');
         
         const time = new Date(entry.timestamp).toLocaleTimeString();
-        const elementInfo = `${entry.element?.tagName || 'unknown'}${entry.element?.id ? '#' + entry.element.id : ''}`;
+        const elementInfo = this.getElementDisplayInfo(entry.element);
+        
+        // Special styling for navigation markers
+        if (entry.type === 'navigation') {
+            entryElement.classList.add('navigation-marker');
+        }
         
         entryElement.innerHTML = `
             <div class="entry-time">${time}</div>
@@ -237,6 +374,31 @@ class AccessibilityLogger {
 
         // Insert at the beginning
         this.logEntriesContainer.insertBefore(entryElement, this.logEntriesContainer.firstChild);
+
+        // Remove new-entry class after animation
+        setTimeout(() => {
+            entryElement.classList.remove('new-entry');
+        }, 1000);
+    }
+
+    /**
+     * Get display info for element
+     */
+    getElementDisplayInfo(element) {
+        if (!element) return 'unknown';
+        
+        let info = element.tagName || 'unknown';
+        
+        if (element.id) {
+            info += `#${element.id}`;
+        } else if (element.className) {
+            const firstClass = element.className.split(' ')[0];
+            if (firstClass) {
+                info += `.${firstClass}`;
+            }
+        }
+        
+        return info;
     }
 
     /**
@@ -249,7 +411,8 @@ class AccessibilityLogger {
             'aria-change': 'ARIA Update',
             'keyboard': 'Key Press',
             'live-region-update': 'Live Region',
-            'mutation': 'DOM Change'
+            'mutation': 'DOM Change',
+            'navigation': '🧭 Navigation'
         };
         return typeMap[type] || type;
     }
@@ -261,18 +424,34 @@ class AccessibilityLogger {
         if (!entry.element && !entry.details) return 'No details';
         
         switch (entry.type) {
+            case 'navigation':
+                return `Navigated to: ${entry.details?.url || 'unknown URL'}`;
             case 'focus':
-                return entry.element?.ariaLabel || entry.element?.textContent || 'Focusable element';
+                return entry.element?.ariaLabel || 
+                       entry.element?.textContent?.substring(0, 50) || 
+                       entry.element?.value?.substring(0, 50) ||
+                       'Focusable element';
             case 'blur':
                 return 'Element lost focus';
             case 'aria-change':
-                return `${entry.details?.attribute}: ${entry.details?.newValue}`;
+                return `${entry.details?.attribute}: ${entry.details?.newValue || 'null'}`;
             case 'keyboard':
-                return `Key: ${entry.details?.key}`;
+                const key = entry.details?.key || 'Unknown';
+                const modifiers = [];
+                if (entry.details?.ctrlKey) modifiers.push('Ctrl');
+                if (entry.details?.altKey) modifiers.push('Alt');
+                if (entry.details?.shiftKey) modifiers.push('Shift');
+                if (entry.details?.metaKey) modifiers.push('Meta');
+                
+                return modifiers.length > 0 ? `${modifiers.join('+')}+${key}` : key;
             case 'live-region-update':
-                return `Added: ${entry.details?.addedContent}`;
+                return `Added: ${entry.details?.addedContent?.substring(0, 50) || 'content'}`;
             default:
-                return entry.details ? JSON.stringify(entry.details).substring(0, 50) + '...' : 'Event details';
+                if (entry.details && typeof entry.details === 'object') {
+                    const detailStr = JSON.stringify(entry.details);
+                    return detailStr.length > 50 ? detailStr.substring(0, 50) + '...' : detailStr;
+                }
+                return 'Event details';
         }
     }
 
@@ -491,35 +670,16 @@ class AccessibilityLogger {
      * Handle panel shown event
      */
     onPanelShown() {
+        console.log('Panel shown, establishing connection...');
         this.announce("Accessibility Logger panel opened");
-        // Refresh connection to content script
+        
+        // Re-establish connection
+        this.connectionEstablished = false;
         this.connectToContentScript();
         
         // Start polling if not already started
         if (!this.pollingInterval) {
             this.startPollingForEvents();
-        }
-    }
-
-    /**
-     * Close current dialog (Escape key handler)
-     */
-    closeCurrentDialog() {
-        // Close any expanded details
-        const expandedEntries = document.querySelectorAll('.log-entry.expanded');
-        expandedEntries.forEach(entry => {
-            const entryId = entry.getAttribute('data-entry-id');
-            const logEntry = this.logEntries.find(e => e.id == entryId);
-            if (logEntry) {
-                logEntry.expanded = false;
-                entry.classList.remove('expanded');
-                const details = entry.querySelector('.entry-expanded-details');
-                if (details) details.remove();
-            }
-        });
-
-        if (expandedEntries.length > 0) {
-            this.announce("Closed expanded details");
         }
     }
 
@@ -531,11 +691,30 @@ class AccessibilityLogger {
             clearInterval(this.pollingInterval);
             this.pollingInterval = null;
         }
+
+        if (this.navigationCheckInterval) {
+            clearInterval(this.navigationCheckInterval);
+            this.navigationCheckInterval = null;
+        }
+
+        if (this.connectionRetryInterval) {
+            clearInterval(this.connectionRetryInterval);
+            this.connectionRetryInterval = null;
+        }
+
+        // Notify background script that DevTools is closing
+        chrome.runtime.sendMessage({
+            action: 'devtools-closed',
+            tabId: chrome.devtools.inspectedWindow.tabId
+        }).catch(() => {
+            // Ignore errors when extension is being unloaded
+        });
     }
 }
 
 // Initialize the Accessibility Logger when the panel loads
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Panel DOM loaded, initializing Accessibility Logger...');
     window.accessibilityLogger = new AccessibilityLogger();
 });
 

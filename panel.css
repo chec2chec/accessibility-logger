@@ -150,9 +150,11 @@ body {
 }
 
 .entry-event.focus { color: #2196f3; }
-.entry-event.aria { color: #ff9800; }
+.entry-event.aria-change { color: #ff9800; }
 .entry-event.keyboard { color: #4caf50; }
-.entry-event.mutation { color: #9c27b0; }
+.entry-event.live-region-update { color: #9c27b0; }
+.entry-event.blur { color: #757575; }
+.entry-event.navigation { color: var(--devtools-focus-color, #0078d4); }
 
 .entry-element {
     font-family: monospace;
@@ -174,6 +176,23 @@ body {
     font-size: 10px;
     white-space: pre-wrap;
     border: 1px solid var(--devtools-border-color, #ddd);
+}
+
+/* New entry animation */
+.log-entry.new-entry {
+    animation: slideIn 0.3s ease-out;
+    background-color: var(--devtools-highlight-background, #fff3cd);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Footer */
@@ -219,6 +238,7 @@ body {
         --devtools-muted-text: #969696;
         --devtools-success-text: #4caf50;
         --devtools-error-text: #f48771;
+        --devtools-highlight-background: #3c3c00;
     }
 }
 
@@ -245,4 +265,15 @@ body {
     .controls button:focus {
         outline: 2px solid ButtonText;
     }
+}
+
+/* Navigation marker styling */
+.log-entry.navigation-marker {
+    background-color: var(--devtools-info-background, #e3f2fd);
+    border-left: 4px solid var(--devtools-focus-color, #0078d4);
+    font-weight: 600;
+}
+
+.log-entry.navigation-marker .entry-event {
+    color: var(--devtools-focus-color, #0078d4);
 }

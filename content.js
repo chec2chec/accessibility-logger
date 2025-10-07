@@ -3,11 +3,25 @@
  * Monitors accessibility events on web pages and sends them to background script
  */
 
-// Prevent multiple injections
-if (window.accessibilityLoggerContentScript) {
-    console.log('Accessibility Logger content script already loaded');
-} else {
-    window.accessibilityLoggerContentScript = true;
+// Prevent multiple injections and handle reinitialization
+(function() {
+    'use strict';
+    
+    let accessibilityMonitor = null;
+    
+    /**
+     * Initialize or reinitialize the accessibility monitor
+     */
+    function initializeMonitor() {
+        // Clean up existing monitor if it exists
+        if (accessibilityMonitor) {
+            accessibilityMonitor.cleanup();
+        }
+        
+        // Create new monitor instance
+        accessibilityMonitor = new AccessibilityMonitor();
+        console.log('Accessibility Logger: Monitor initialized/reinitialized');
+    }
 
     /**
      * Accessibility Event Monitor
@@ -17,37 +31,122 @@ if (window.accessibilityLoggerContentScript) {
         constructor() {
             this.isDevToolsReady = false;
             this.eventQueue = [];
+            this.observers = [];
+            this.eventListeners = [];
+            this.connectionCheckInterval = null;
+            
             this.init();
         }
 
         init() {
-            this.setupDevToolsListener();
+            this.setupConnectionCheck();
+            this.setupRuntimeMessageListener();
             this.setupFocusMonitoring();
             this.setupAriaMonitoring();
             this.setupKeyboardMonitoring();
+            this.setupNavigationListener();
             console.log('Accessibility Logger: Content script monitoring started');
         }
 
         /**
-         * Listen for DevTools panel ready signal
+         * Check connection to background script periodically
          */
-        setupDevToolsListener() {
-            window.addEventListener('message', (event) => {
-                if (event.data.type === 'DEVTOOLS_PANEL_READY' && 
-                    event.data.source === 'accessibility-logger') {
-                    console.log('DevTools panel ready signal received');
+        setupConnectionCheck() {
+            this.connectionCheckInterval = setInterval(() => {
+                chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.log('Connection to background script lost, may need reinitialization');
+                    }
+                });
+            }, 30000); // Check every 30 seconds
+        }
+
+        /**
+         * Listen for messages from background script
+         */
+        setupRuntimeMessageListener() {
+            const messageListener = (request, sender, sendResponse) => {
+                console.log('Content script received message:', request);
+                
+                if (request.action === 'devtools-ready') {
+                    console.log('DevTools panel is ready, enabling event monitoring');
                     this.isDevToolsReady = true;
-                    
-                    // Process any queued events
                     this.processEventQueue();
+                    sendResponse({ success: true });
                 }
+                
+                if (request.action === 'devtools-closed') {
+                    console.log('DevTools panel closed, disabling event monitoring');
+                    this.isDevToolsReady = false;
+                    sendResponse({ success: true });
+                }
+                
+                if (request.action === 'reinitialize') {
+                    console.log('Reinitializing accessibility monitor due to navigation');
+                    this.reinitialize();
+                    sendResponse({ success: true });
+                }
+            };
+            
+            chrome.runtime.onMessage.addListener(messageListener);
+            this.eventListeners.push({ 
+                target: chrome.runtime.onMessage, 
+                listener: messageListener 
             });
+        }
+
+        /**
+         * Listen for navigation and reinitialization messages
+         */
+        setupNavigationListener() {
+            // Listen for page visibility changes
+            const visibilityChangeListener = () => {
+                if (document.visibilityState === 'visible') {
+                    console.log('Page became visible, checking monitor status');
+                    this.checkAndReinitialize();
+                }
+            };
+            
+            document.addEventListener('visibilitychange', visibilityChangeListener);
+            this.eventListeners.push({ 
+                target: document, 
+                event: 'visibilitychange', 
+                listener: visibilityChangeListener 
+            });
+        }
+
+        /**
+         * Check if monitor needs reinitialization and do it if necessary
+         */
+        checkAndReinitialize() {
+            // Simple check - if we have no observers, we probably need to reinitialize
+            if (this.observers.length === 0) {
+                console.log('No observers found, reinitializing monitor');
+                this.reinitialize();
+            }
+        }
+
+        /**
+         * Reinitialize the monitor (for navigation events)
+         */
+        reinitialize() {
+            this.cleanup();
+            this.isDevToolsReady = false;
+            this.eventQueue = [];
+            this.observers = [];
+            this.eventListeners = [];
+            
+            // Small delay to ensure page is ready
+            setTimeout(() => {
+                this.init();
+            }, 100);
         }
 
         /**
          * Process queued events when DevTools becomes ready
          */
         processEventQueue() {
+            console.log('Processing event queue, length:', this.eventQueue.length);
             while (this.eventQueue.length > 0) {
                 const event = this.eventQueue.shift();
                 this.sendAccessibilityEvent(event);
@@ -58,7 +157,7 @@ if (window.accessibilityLoggerContentScript) {
          * Monitor focus changes
          */
         setupFocusMonitoring() {
-            document.addEventListener('focus', (e) => {
+            const focusListener = (e) => {
                 const element = e.target;
                 const eventData = {
                     type: 'focus',
@@ -74,10 +173,11 @@ if (window.accessibilityLoggerContentScript) {
                     }
                 };
                 
+                console.log('Focus event detected:', eventData);
                 this.queueOrSendEvent(eventData);
-            }, true);
+            };
 
-            document.addEventListener('blur', (e) => {
+            const blurListener = (e) => {
                 const element = e.target;
                 const eventData = {
                     type: 'blur',
@@ -89,8 +189,27 @@ if (window.accessibilityLoggerContentScript) {
                     }
                 };
                 
+                console.log('Blur event detected:', eventData);
                 this.queueOrSendEvent(eventData);
-            }, true);
+            };
+
+            document.addEventListener('focus', focusListener, true);
+            document.addEventListener('blur', blurListener, true);
+            
+            this.eventListeners.push({ 
+                target: document, 
+                event: 'focus', 
+                listener: focusListener, 
+                options: true 
+            });
+            this.eventListeners.push({ 
+                target: document, 
+                event: 'blur', 
+                listener: blurListener, 
+                options: true 
+            });
+
+            console.log('Focus monitoring setup complete');
         }
 
         /**
@@ -117,6 +236,7 @@ if (window.accessibilityLoggerContentScript) {
                                 }
                             };
                             
+                            console.log('ARIA change detected:', eventData);
                             this.queueOrSendEvent(eventData);
                         }
                     } else if (mutation.type === 'childList') {
@@ -137,6 +257,7 @@ if (window.accessibilityLoggerContentScript) {
                                         }
                                     };
                                     
+                                    console.log('Live region update detected:', eventData);
                                     this.queueOrSendEvent(eventData);
                                 }
                             }
@@ -157,13 +278,16 @@ if (window.accessibilityLoggerContentScript) {
                     'aria-pressed', 'aria-current', 'aria-invalid'
                 ]
             });
+
+            this.observers.push(observer);
+            console.log('ARIA monitoring setup complete');
         }
 
         /**
          * Monitor keyboard interactions
          */
         setupKeyboardMonitoring() {
-            document.addEventListener('keydown', (e) => {
+            const keydownListener = (e) => {
                 // Only log meaningful keyboard interactions
                 if (this.isSignificantKeyEvent(e)) {
                     const eventData = {
@@ -183,9 +307,20 @@ if (window.accessibilityLoggerContentScript) {
                         }
                     };
                     
+                    console.log('Keyboard event detected:', eventData);
                     this.queueOrSendEvent(eventData);
                 }
-            }, true);
+            };
+
+            document.addEventListener('keydown', keydownListener, true);
+            this.eventListeners.push({ 
+                target: document, 
+                event: 'keydown', 
+                listener: keydownListener, 
+                options: true 
+            });
+
+            console.log('Keyboard monitoring setup complete');
         }
 
         /**
@@ -193,8 +328,10 @@ if (window.accessibilityLoggerContentScript) {
          */
         queueOrSendEvent(eventData) {
             if (this.isDevToolsReady) {
+                console.log('DevTools ready, sending event immediately:', eventData.type);
                 this.sendAccessibilityEvent(eventData);
             } else {
+                console.log('DevTools not ready, queuing event:', eventData.type);
                 this.eventQueue.push(eventData);
                 
                 // Prevent queue from growing too large
@@ -317,12 +454,15 @@ if (window.accessibilityLoggerContentScript) {
         sendAccessibilityEvent(eventData) {
             try {
                 if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+                    console.log('Sending accessibility event to background script:', eventData);
                     chrome.runtime.sendMessage({
                         action: 'accessibility-event',
                         data: eventData
                     }, (response) => {
                         if (chrome.runtime.lastError) {
                             console.error('Failed to send accessibility event:', chrome.runtime.lastError);
+                        } else {
+                            console.log('Event sent successfully:', response);
                         }
                     });
                 } else {
@@ -333,16 +473,47 @@ if (window.accessibilityLoggerContentScript) {
                 console.error('Error sending accessibility event:', error);
             }
         }
+
+        /**
+         * Clean up all event listeners and observers
+         */
+        cleanup() {
+            // Clear connection check interval
+            if (this.connectionCheckInterval) {
+                clearInterval(this.connectionCheckInterval);
+                this.connectionCheckInterval = null;
+            }
+
+            // Disconnect all mutation observers
+            this.observers.forEach(observer => observer.disconnect());
+            this.observers = [];
+
+            // Remove all event listeners
+            this.eventListeners.forEach(({ target, event, listener, options }) => {
+                if (target.removeEventListener) {
+                    target.removeEventListener(event, listener, options);
+                } else if (target.removeListener) {
+                    target.removeListener(listener);
+                }
+            });
+            this.eventListeners = [];
+
+            console.log('Accessibility Logger: Monitor cleaned up');
+        }
     }
 
-    // Initialize the monitor
-    const monitor = new AccessibilityMonitor();
+    // Initialize monitor when script loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeMonitor);
+    } else {
+        initializeMonitor();
+    }
 
-    // Handle messages from popup or background script
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === "buttonClicked") {
-            alert("Hello from your Chrome extension!");
-            sendResponse({ success: true });
+    // Handle page unload
+    window.addEventListener('beforeunload', () => {
+        if (accessibilityMonitor) {
+            accessibilityMonitor.cleanup();
         }
     });
-}
+
+})();
