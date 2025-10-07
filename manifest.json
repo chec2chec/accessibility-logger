@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Accessibility Logger",
+  "version": "1.0",
+  "description": "Chrome DevTools extension that mocks NVDA screen reader functionality for accessibility debugging",
+  "author": "Ivan Simeonov",
+  "homepage_url": "https://github.com/chec2chec/accessibility-logger",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html", "panel.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

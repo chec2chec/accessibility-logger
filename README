@@ -1,0 +1,104 @@
+# Accessibility Logger
+
+A Chrome DevTools extension that helps developers understand and debug accessibility issues from a screen reader user's perspective. Inspired by NVDA (NonVisual Desktop Access) screen reader functionality.
+
+## 🎯 Purpose
+
+This extension bridges the gap between developers and screen reader users by providing real-time accessibility event monitoring and NVDA-like navigation simulation. It helps developers:
+
+- **Debug accessibility issues** before they impact real users
+- **Understand screen reader interaction patterns** 
+- **Test ARIA implementations** and focus management
+- **Optimize keyboard navigation** for assistive technology users
+- **Identify missing accessibility markup** in real-time
+
+## ✨ Current Features
+
+- **Real-time Event Logging**: Focus changes, ARIA updates, keyboard interactions, live region announcements
+- **NVDA-inspired Navigation**: Tab, Shift+Tab, Arrow keys, Enter, Escape navigation within the logger
+- **DevTools Integration**: Native Chrome DevTools panel for seamless development workflow
+- **Event Management**: Toggle logging, clear logs, export data for analysis
+- **Detailed Event Information**: Comprehensive element data including roles, labels, attributes
+- **Accessible Interface**: The logger itself follows accessibility best practices
+
+## 🔮 Next Phase: Audio Feedback
+
+The upcoming major enhancement will add **text-to-speech capabilities** to simulate the complete NVDA experience:
+
+- 🔊 **Read-aloud functionality** for accessibility events and announcements
+- 🔇 **Toggle sound on/off** option for silent debugging or full audio simulation  
+- ⚙️ **Speech controls** for rate and voice preferences
+- 📢 **Audio announcements** for navigation state changes
+
+This will transform the extension into a complete screen reader simulation environment.
+
+## 🚀 Installation
+
+1. Download or clone this repository
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode" in the top-right corner
+4. Click "Load unpacked" and select the project folder
+5. Open Chrome DevTools (F12) and look for the "Accessibility Logger" tab
+
+## 🎮 Usage
+
+### Basic Logging
+1. Open Chrome DevTools (F12)
+2. Navigate to the "Accessibility Logger" tab
+3. Interact with the webpage to see accessibility events logged in real-time
+4. Use the "Clear Log" and "Export" buttons to manage logged data
+
+### NVDA-like Navigation
+Navigate through logged events using screen reader patterns:
+- **Tab** / **Shift+Tab**: Move between log entries
+- **Arrow Up/Down**: Navigate line by line through events
+- **Enter**: Expand/collapse detailed event information
+- **Escape**: Close expanded details
+- **Home/End**: Jump to first/last log entry
+
+### Event Types Monitored
+- **Focus Changes**: When elements gain or lose focus
+- **ARIA Updates**: Changes to ARIA attributes and roles
+- **Keyboard Interactions**: Significant key presses for navigation
+- **Live Region Updates**: Dynamic content announcements
+- **DOM Changes**: Accessibility-relevant mutations
+
+## 🛠️ Technical Details
+
+- **Chrome Extension Manifest V3** for modern security and performance
+- **DevTools API** integration for seamless developer experience
+- **Content Scripts** for non-intrusive web page monitoring
+- **Service Worker** for efficient background processing
+- **Chrome Storage API** for event persistence
+
+## 👥 Target Audience
+
+- Web developers working on accessibility compliance
+- QA engineers testing accessibility features  
+- UX designers learning screen reader interaction patterns
+- Accessibility specialists debugging complex implementations
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 👨‍💻 Author
+
+**Ivan Simeonov** - [GitHub Profile](https://github.com/chec2chec)
+
+## 🤝 Contributing
+
+Contributions are welcome! This tool aims to make the web more accessible for everyone. Please feel free to:
+
+- Report bugs and suggest features
+- Submit pull requests for improvements
+- Share feedback from real screen reader users
+- Help test with various assistive technologies
+
+## 🌟 Inspiration
+
+This project is inspired by **NVDA (NonVisual Desktop Access)**, a free and open-source screen reader that empowers blind and vision-impaired users to navigate the digital world. By simulating NVDA's behavior in a developer-friendly environment, we hope to create more inclusive web experiences.
+
+---
+
+*Making the web accessible, one event at a time.* 🌐♿

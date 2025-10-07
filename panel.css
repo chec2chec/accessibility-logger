@@ -1,0 +1,248 @@
+/* Accessibility Logger Panel Styles */
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12px;
+    background-color: var(--devtools-background-color, #f3f3f3);
+    color: var(--devtools-text-color, #333);
+}
+
+.accessibility-logger {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* Header */
+.logger-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--devtools-border-color, #ddd);
+    background-color: var(--devtools-toolbar-background, #f8f8f8);
+}
+
+.logger-header h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.controls button {
+    padding: 4px 8px;
+    border: 1px solid var(--devtools-border-color, #ccc);
+    background: var(--devtools-button-background, #fff);
+    color: var(--devtools-text-color, #333);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.controls button:hover {
+    background: var(--devtools-button-hover-background, #f0f0f0);
+}
+
+.controls button:focus {
+    outline: 2px solid var(--devtools-focus-color, #0078d4);
+    outline-offset: 1px;
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+/* Main Content */
+.logger-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.navigation-info {
+    padding: 8px 12px;
+    background-color: var(--devtools-info-background, #e3f2fd);
+    border-bottom: 1px solid var(--devtools-border-color, #ddd);
+    font-size: 11px;
+    color: var(--devtools-info-text, #1976d2);
+}
+
+/* Log Container */
+.log-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.log-header {
+    display: grid;
+    grid-template-columns: 80px 120px 1fr 1fr;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: var(--devtools-toolbar-background, #f8f8f8);
+    border-bottom: 1px solid var(--devtools-border-color, #ddd);
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.log-entries {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.log-entries:focus {
+    outline: 2px solid var(--devtools-focus-color, #0078d4);
+    outline-offset: -2px;
+}
+
+/* Log Entry */
+.log-entry {
+    display: grid;
+    grid-template-columns: 80px 120px 1fr 1fr;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--devtools-border-color, #eee);
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.log-entry:hover {
+    background-color: var(--devtools-hover-background, #f5f5f5);
+}
+
+.log-entry:focus,
+.log-entry.focused {
+    background-color: var(--devtools-selection-background, #e3f2fd);
+    outline: 2px solid var(--devtools-focus-color, #0078d4);
+    outline-offset: -2px;
+}
+
+.log-entry.expanded {
+    background-color: var(--devtools-expanded-background, #f8f8f8);
+}
+
+.entry-time {
+    color: var(--devtools-muted-text, #666);
+    font-family: monospace;
+}
+
+.entry-event {
+    font-weight: 500;
+}
+
+.entry-event.focus { color: #2196f3; }
+.entry-event.aria { color: #ff9800; }
+.entry-event.keyboard { color: #4caf50; }
+.entry-event.mutation { color: #9c27b0; }
+
+.entry-element {
+    font-family: monospace;
+    color: var(--devtools-element-text, #1976d2);
+}
+
+.entry-details {
+    color: var(--devtools-text-color, #333);
+}
+
+/* Expanded Details */
+.entry-expanded-details {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding: 8px;
+    background-color: var(--devtools-code-background, #f8f8f8);
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 10px;
+    white-space: pre-wrap;
+    border: 1px solid var(--devtools-border-color, #ddd);
+}
+
+/* Footer */
+.logger-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    border-top: 1px solid var(--devtools-border-color, #ddd);
+    background-color: var(--devtools-toolbar-background, #f8f8f8);
+    font-size: 11px;
+}
+
+.status-info {
+    display: flex;
+    gap: 16px;
+}
+
+#connectionStatus.connected {
+    color: var(--devtools-success-text, #4caf50);
+}
+
+#connectionStatus.disconnected {
+    color: var(--devtools-error-text, #f44336);
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+    body {
+        --devtools-background-color: #1e1e1e;
+        --devtools-text-color: #cccccc;
+        --devtools-border-color: #3c3c3c;
+        --devtools-toolbar-background: #2d2d30;
+        --devtools-button-background: #3c3c3c;
+        --devtools-button-hover-background: #4c4c4c;
+        --devtools-focus-color: #007acc;
+        --devtools-selection-background: #094771;
+        --devtools-hover-background: #2a2d2e;
+        --devtools-code-background: #1e1e1e;
+        --devtools-info-background: #1e3a5f;
+        --devtools-info-text: #64b5f6;
+        --devtools-element-text: #9cdcfe;
+        --devtools-muted-text: #969696;
+        --devtools-success-text: #4caf50;
+        --devtools-error-text: #f48771;
+    }
+}
+
+/* Accessibility improvements */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+    .log-entry:focus,
+    .log-entry.focused {
+        outline: 2px solid ButtonText;
+    }
+    
+    .controls button:focus {
+        outline: 2px solid ButtonText;
+    }
+}

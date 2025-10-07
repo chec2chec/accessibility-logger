@@ -1,0 +1,48 @@
+# Copilot instructions file
+.copilot-instructions.md
+
+# Logo/design files
+logo.svg
+
+# General development files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node.js (if you add build tools later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Temporary folders
+tmp/
+temp/
+
+# Chrome extension development
+*.crx
+*.pem
+key.pem
+
+# Backup files
+*.bak
+*.backup
