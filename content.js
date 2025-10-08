@@ -1,6 +1,7 @@
 /**
  * Content script for Accessibility Logger
  * Monitors accessibility events on web pages and sends them to background script
+ * Includes enhanced arrow key navigation with text content logging
  */
 
 // Prevent multiple injections and handle reinitialization
@@ -24,8 +25,189 @@
     }
 
     /**
+     * Text Navigation Helper
+     * Handles text content extraction for arrow key navigation
+     */
+    class TextReader {
+        constructor() {
+            this.currentElement = null;
+            this.currentLineIndex = 0;
+            this.textLines = [];
+            this.initializeTextContent();
+        }
+
+        /**
+         * Initialize text content from the page
+         */
+        initializeTextContent() {
+            this.textLines = this.extractTextLines();
+            console.log('Found', this.textLines.length, 'text lines for navigation');
+        }
+
+        /**
+         * Extract text lines from the page content
+         */
+        extractTextLines() {
+            const lines = [];
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: (node) => {
+                        // Only include visible text nodes with meaningful content
+                        const parent = node.parentElement;
+                        if (!parent) return NodeFilter.FILTER_REJECT;
+                        
+                        const style = window.getComputedStyle(parent);
+                        const text = node.textContent.trim();
+                        
+                        if (text.length === 0) return NodeFilter.FILTER_REJECT;
+                        if (style.display === 'none') return NodeFilter.FILTER_REJECT;
+                        if (style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
+                        if (['script', 'style', 'noscript'].includes(parent.tagName?.toLowerCase())) {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                }
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                const text = node.textContent.trim();
+                const parent = node.parentElement;
+                
+                // Split by natural line breaks and sentences for better navigation
+                const textSegments = this.splitIntoLines(text, parent);
+                textSegments.forEach(segment => {
+                    if (segment.trim().length > 0) {
+                        lines.push({
+                            text: segment.trim(),
+                            element: parent,
+                            node: node
+                        });
+                    }
+                });
+            }
+
+            return lines;
+        }
+
+        /**
+         * Split text into logical lines based on content and element type
+         */
+        splitIntoLines(text, element) {
+            const tagName = element.tagName?.toLowerCase();
+            
+            // For headings, paragraphs, and list items - treat as single lines
+            if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'button', 'a'].includes(tagName)) {
+                return [text];
+            }
+            
+            // For longer text blocks, split by sentences or line breaks
+            if (text.length > 100) {
+                // Split by periods, exclamation marks, question marks followed by space or end
+                const sentences = text.split(/([.!?]+\s+|[.!?]+$)/).filter(s => s.trim().length > 0);
+                const result = [];
+                for (let i = 0; i < sentences.length; i += 2) {
+                    const sentence = sentences[i] + (sentences[i + 1] || '');
+                    if (sentence.trim().length > 0) {
+                        result.push(sentence.trim());
+                    }
+                }
+                return result.length > 0 ? result : [text];
+            }
+            
+            // For shorter text, treat as single line
+            return [text];
+        }
+
+        /**
+         * Get current line text
+         */
+        getCurrentLineText() {
+            if (this.currentLineIndex >= 0 && this.currentLineIndex < this.textLines.length) {
+                return this.textLines[this.currentLineIndex].text;
+            }
+            return null;
+        }
+
+        /**
+         * Get next line text
+         */
+        getNextLineText() {
+            const nextIndex = this.currentLineIndex + 1;
+            if (nextIndex < this.textLines.length) {
+                this.currentLineIndex = nextIndex;
+                return this.textLines[nextIndex].text;
+            }
+            return null;
+        }
+
+        /**
+         * Get previous line text
+         */
+        getPreviousLineText() {
+            const prevIndex = this.currentLineIndex - 1;
+            if (prevIndex >= 0) {
+                this.currentLineIndex = prevIndex;
+                return this.textLines[prevIndex].text;
+            }
+            return null;
+        }
+
+        /**
+         * Find line index based on currently focused element
+         */
+        findLineFromElement(element) {
+            if (!element) return -1;
+            
+            // Find the closest text line that belongs to this element or its children
+            for (let i = 0; i < this.textLines.length; i++) {
+                const line = this.textLines[i];
+                if (element.contains(line.element) || line.element.contains(element) || line.element === element) {
+                    this.currentLineIndex = i;
+                    return i;
+                }
+            }
+            
+            return -1;
+        }
+
+        /**
+         * Get character-level navigation text
+         */
+        getCharacterNavigation(direction) {
+            const currentLine = this.getCurrentLineText();
+            if (!currentLine) return null;
+            
+            // For character navigation, return a portion of the current line
+            const maxLength = 50;
+            if (currentLine.length <= maxLength) {
+                return currentLine;
+            }
+            
+            // Return beginning or end portion based on direction
+            if (direction === 'next') {
+                return currentLine.substring(0, maxLength) + '...';
+            } else {
+                return '...' + currentLine.substring(currentLine.length - maxLength);
+            }
+        }
+
+        /**
+         * Refresh text content (call after page changes)
+         */
+        refresh() {
+            this.initializeTextContent();
+            this.currentLineIndex = 0;
+        }
+    }
+
+    /**
      * Accessibility Event Monitor
-     * Tracks focus changes, ARIA updates, and keyboard interactions
+     * Enhanced with text content logging for arrow key navigation
      */
     class AccessibilityMonitor {
         constructor() {
@@ -34,6 +216,7 @@
             this.observers = [];
             this.eventListeners = [];
             this.connectionCheckInterval = null;
+            this.textReader = new TextReader();
             
             this.init();
         }
@@ -113,6 +296,29 @@
                 event: 'visibilitychange', 
                 listener: visibilityChangeListener 
             });
+
+            // Listen for DOM changes to refresh text reader
+            const mutationObserver = new MutationObserver((mutations) => {
+                let shouldRefresh = false;
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'childList' && 
+                        (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+                        shouldRefresh = true;
+                    }
+                });
+                
+                if (shouldRefresh) {
+                    console.log('DOM changed, refreshing text reader');
+                    this.textReader.refresh();
+                }
+            });
+            
+            mutationObserver.observe(document, {
+                childList: true,
+                subtree: true
+            });
+            
+            this.observers.push(mutationObserver);
         }
 
         /**
@@ -159,6 +365,10 @@
         setupFocusMonitoring() {
             const focusListener = (e) => {
                 const element = e.target;
+                
+                // Update text reader position based on focused element
+                this.textReader.findLineFromElement(element);
+                
                 const eventData = {
                     type: 'focus',
                     timestamp: Date.now(),
@@ -284,12 +494,46 @@
         }
 
         /**
-         * Monitor keyboard interactions
+         * Monitor keyboard interactions with enhanced arrow key text logging
          */
         setupKeyboardMonitoring() {
             const keydownListener = (e) => {
                 // Only log meaningful keyboard interactions
                 if (this.isSignificantKeyEvent(e)) {
+                    let textContent = null;
+                    let navigationDirection = null;
+
+                    // Enhanced arrow key handling with text content
+                    if (e.key === 'ArrowUp') {
+                        const previousText = this.textReader.getPreviousLineText();
+                        if (previousText) {
+                            textContent = `Previous line: "${previousText}"`;
+                            navigationDirection = 'previous';
+                        } else {
+                            textContent = 'Beginning of content reached';
+                        }
+                    } else if (e.key === 'ArrowDown') {
+                        const nextText = this.textReader.getNextLineText();
+                        if (nextText) {
+                            textContent = `Next line: "${nextText}"`;
+                            navigationDirection = 'next';
+                        } else {
+                            textContent = 'End of content reached';
+                        }
+                    } else if (e.key === 'ArrowLeft') {
+                        const charText = this.textReader.getCharacterNavigation('previous');
+                        if (charText) {
+                            textContent = `Character navigation: "${charText}"`;
+                            navigationDirection = 'previous';
+                        }
+                    } else if (e.key === 'ArrowRight') {
+                        const charText = this.textReader.getCharacterNavigation('next');
+                        if (charText) {
+                            textContent = `Character navigation: "${charText}"`;
+                            navigationDirection = 'next';
+                        }
+                    }
+
                     const eventData = {
                         type: 'keyboard',
                         timestamp: Date.now(),
@@ -303,7 +547,11 @@
                             shiftKey: e.shiftKey,
                             metaKey: e.metaKey,
                             isNavigation: this.isNavigationKey(e.key),
-                            isScreenReaderKey: this.isScreenReaderKey(e)
+                            isScreenReaderKey: this.isScreenReaderKey(e),
+                            textContent: textContent,
+                            navigationDirection: navigationDirection,
+                            currentLineIndex: this.textReader.currentLineIndex,
+                            totalLines: this.textReader.textLines.length
                         }
                     };
                     

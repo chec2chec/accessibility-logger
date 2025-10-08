@@ -443,7 +443,22 @@ class AccessibilityLogger {
                 if (entry.details?.shiftKey) modifiers.push('Shift');
                 if (entry.details?.metaKey) modifiers.push('Meta');
                 
-                return modifiers.length > 0 ? `${modifiers.join('+')}+${key}` : key;
+                const keyCombo = modifiers.length > 0 ? `${modifiers.join('+')}+${key}` : key;
+                
+                // Show text content for arrow keys
+                if (entry.details?.textContent) {
+                    return entry.details.textContent;
+                }
+                
+                // Show line position for arrow keys
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key) && 
+                    entry.details?.currentLineIndex !== undefined) {
+                    const direction = entry.details.navigationDirection || 'unknown';
+                    const lineInfo = `Line ${entry.details.currentLineIndex + 1}/${entry.details.totalLines}`;
+                    return `${keyCombo} - ${direction} (${lineInfo})`;
+                }
+                
+                return keyCombo;
             case 'live-region-update':
                 return `Added: ${entry.details?.addedContent?.substring(0, 50) || 'content'}`;
             default:
