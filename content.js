@@ -20,7 +20,6 @@
         
         // Create new monitor instance
         accessibilityMonitor = new AccessibilityMonitor();
-        console.log('Accessibility Logger: Monitor initialized/reinitialized');
     }
 
     /**
@@ -40,7 +39,6 @@
          */
         initializeTextContent() {
             this.textLines = this.extractTextLines();
-            console.log('Found', this.textLines.length, 'text lines for navigation');
         }
 
         /**
@@ -227,7 +225,6 @@
             this.setupFocusMonitoring();
             this.setupKeyboardMonitoring();
             this.setupNavigationListener();
-            console.log('Accessibility Logger: Content script monitoring started');
         }
 
         /**
@@ -237,7 +234,7 @@
             this.connectionCheckInterval = setInterval(() => {
                 chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
                     if (chrome.runtime.lastError) {
-                        console.log('Connection to background script lost, may need reinitialization');
+                        // Connection lost, may need reinitialization
                     }
                 });
             }, 30000); // Check every 30 seconds
@@ -248,23 +245,18 @@
          */
         setupRuntimeMessageListener() {
             const messageListener = (request, sender, sendResponse) => {
-                console.log('Content script received message:', request);
-                
                 if (request.action === 'devtools-ready') {
-                    console.log('DevTools panel is ready, enabling event monitoring');
                     this.isDevToolsReady = true;
                     this.processEventQueue();
                     sendResponse({ success: true });
                 }
                 
                 if (request.action === 'devtools-closed') {
-                    console.log('DevTools panel closed, disabling event monitoring');
                     this.isDevToolsReady = false;
                     sendResponse({ success: true });
                 }
                 
                 if (request.action === 'reinitialize') {
-                    console.log('Reinitializing accessibility monitor due to navigation');
                     this.reinitialize();
                     sendResponse({ success: true });
                 }
@@ -284,7 +276,6 @@
             // Listen for page visibility changes
             const visibilityChangeListener = () => {
                 if (document.visibilityState === 'visible') {
-                    console.log('Page became visible, checking monitor status');
                     this.checkAndReinitialize();
                 }
             };
@@ -307,7 +298,6 @@
                 });
                 
                 if (shouldRefresh) {
-                    console.log('DOM changed, refreshing text reader');
                     this.textReader.refresh();
                 }
             });
@@ -326,7 +316,6 @@
         checkAndReinitialize() {
             // Simple check - if we have no observers, we probably need to reinitialize
             if (this.observers.length === 0) {
-                console.log('No observers found, reinitializing monitor');
                 this.reinitialize();
             }
         }
@@ -351,7 +340,6 @@
          * Process queued events when DevTools becomes ready
          */
         processEventQueue() {
-            console.log('Processing event queue, length:', this.eventQueue.length);
             while (this.eventQueue.length > 0) {
                 const event = this.eventQueue.shift();
                 this.sendAccessibilityEvent(event);
@@ -388,7 +376,6 @@
                     }
                 };
                 
-                console.log('Tab-triggered focus event detected:', eventData);
                 this.queueOrSendEvent(eventData);
                 
                 // Reset the last key pressed after processing
@@ -403,8 +390,6 @@
                 listener: focusListener, 
                 options: true 
             });
-
-            console.log('Focus monitoring setup complete');
         }
 
         /**
@@ -478,7 +463,6 @@
                         }
                     };
                     
-                    console.log('Arrow key event detected:', eventData);
                     this.queueOrSendEvent(eventData);
                 }
 
@@ -495,8 +479,6 @@
                 listener: keydownListener, 
                 options: true 
             });
-
-            console.log('Keyboard monitoring setup complete');
         }
 
         /**
@@ -504,10 +486,8 @@
          */
         queueOrSendEvent(eventData) {
             if (this.isDevToolsReady) {
-                console.log('DevTools ready, sending event immediately:', eventData.type);
                 this.sendAccessibilityEvent(eventData);
             } else {
-                console.log('DevTools not ready, queuing event:', eventData.type);
                 this.eventQueue.push(eventData);
                 
                 // Prevent queue from growing too large
@@ -563,23 +543,19 @@
         sendAccessibilityEvent(eventData) {
             try {
                 if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
-                    console.log('Sending accessibility event to background script:', eventData);
                     chrome.runtime.sendMessage({
                         action: 'accessibility-event',
                         data: eventData
                     }, (response) => {
                         if (chrome.runtime.lastError) {
-                            console.error('Failed to send accessibility event:', chrome.runtime.lastError);
-                        } else {
-                            console.log('Event sent successfully:', response);
+                            // Failed to send accessibility event
                         }
                     });
                 } else {
-                    console.warn('Chrome runtime API not available, queuing event');
                     this.eventQueue.push(eventData);
                 }
             } catch (error) {
-                console.error('Error sending accessibility event:', error);
+                // Error sending accessibility event
             }
         }
 
@@ -606,8 +582,6 @@
                 }
             });
             this.eventListeners = [];
-
-            console.log('Accessibility Logger: Monitor cleaned up');
         }
     }
 

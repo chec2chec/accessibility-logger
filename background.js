@@ -30,14 +30,12 @@ function isValidUrl(url) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'accessibility-event') {
         // Forward accessibility events to DevTools panel
-        console.log('Accessibility event received:', message.data);
         
         // Check if chrome.storage is available
         if (chrome.storage && chrome.storage.local) {
             // Store the event data for the DevTools panel to retrieve
             chrome.storage.local.get(['accessibilityEvents'], (result) => {
                 if (chrome.runtime.lastError) {
-                    console.error('Storage get error:', chrome.runtime.lastError);
                     sendResponse({ success: false, error: chrome.runtime.lastError.message });
                     return;
                 }
@@ -58,7 +56,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
                 chrome.storage.local.set({ accessibilityEvents: events }, () => {
                     if (chrome.runtime.lastError) {
-                        console.error('Storage set error:', chrome.runtime.lastError);
                         sendResponse({ success: false, error: chrome.runtime.lastError.message });
                     } else {
                         sendResponse({ success: true });
@@ -66,7 +63,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             });
         } else {
-            console.error('Chrome storage API not available');
             sendResponse({ success: false, error: 'Storage API not available' });
         }
         
@@ -84,13 +80,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'devtools-ready') {
         const tabId = message.tabId;
         devToolsConnections.set(tabId, true);
-        console.log('DevTools ready for tab:', tabId);
         
         // Notify content script that DevTools is ready
         chrome.tabs.sendMessage(tabId, {
             action: 'devtools-ready'
-        }).catch((error) => {
-            console.log('Could not notify content script of DevTools ready state:', error.message);
+        }).catch(() => {
+            // Ignore connection errors
         });
         
         sendResponse({ success: true });
@@ -101,13 +96,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'devtools-closed') {
         const tabId = message.tabId;
         devToolsConnections.delete(tabId);
-        console.log('DevTools closed for tab:', tabId);
         
         // Optionally notify content script
         chrome.tabs.sendMessage(tabId, {
             action: 'devtools-closed'
-        }).catch((error) => {
-            console.log('Could not notify content script of DevTools closed state:', error.message);
+        }).catch(() => {
+            // Ignore connection errors
         });
         
         sendResponse({ success: true });
@@ -117,16 +111,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Handle extension installation
 chrome.runtime.onInstalled.addListener((details) => {
-    console.log('Accessibility Logger installed:', details.reason);
-    
     // Clear any previous event data
     if (chrome.storage && chrome.storage.local) {
         chrome.storage.local.clear(() => {
-            if (chrome.runtime.lastError) {
-                console.error('Failed to clear storage:', chrome.runtime.lastError);
-            } else {
-                console.log('Storage cleared successfully');
-            }
+            // Installation complete
         });
     }
 });
@@ -134,8 +122,6 @@ chrome.runtime.onInstalled.addListener((details) => {
 // Handle tab updates to reinitialize monitoring
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url && isValidUrl(tab.url)) {
-        console.log('Tab navigation completed, reinitializing accessibility monitoring for:', tab.url);
-        
         // Clear events for new page
         if (chrome.storage && chrome.storage.local) {
             chrome.storage.local.set({ accessibilityEvents: [] });
@@ -148,13 +134,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         chrome.scripting.executeScript({
             target: { tabId: tabId },
             files: ['content.js']
-        }).catch((error) => {
+        }).catch(() => {
             // Content script might already be injected, or page might not allow injection
-            console.log('Content script injection result for tab', tabId, ':', error.message);
         });
     } else if (changeInfo.status === 'complete' && tab.url && !isValidUrl(tab.url)) {
-        console.log('Skipping content script injection for restricted URL:', tab.url);
-        
         // Clear events for restricted pages
         if (chrome.storage && chrome.storage.local) {
             chrome.storage.local.set({ accessibilityEvents: [] });
@@ -169,16 +152,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
     chrome.tabs.get(details.tabId, (tab) => {
         if (chrome.runtime.lastError) {
-            console.error('Error getting tab info:', chrome.runtime.lastError);
             return;
         }
         
         if (!isValidUrl(tab.url)) {
-            console.log('Skipping SPA navigation handling for restricted URL:', tab.url);
             return;
         }
-        
-        console.log('SPA navigation detected, ensuring content script is active for:', tab.url);
         
         // Clear events for new page state
         if (chrome.storage && chrome.storage.local) {
@@ -188,15 +167,13 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
         // Send message to content script to reinitialize if needed
         chrome.tabs.sendMessage(details.tabId, {
             action: 'reinitialize'
-        }).catch((error) => {
-            console.log('Could not reach content script, may need re-injection');
-            
+        }).catch(() => {
             // Try re-injecting content script (only for valid URLs)
             chrome.scripting.executeScript({
                 target: { tabId: details.tabId },
                 files: ['content.js']
-            }).catch((error) => {
-                console.log('Failed to re-inject content script for tab', details.tabId, ':', error.message);
+            }).catch(() => {
+                // Failed to re-inject content script
             });
         });
     });

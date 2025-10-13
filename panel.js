@@ -71,7 +71,6 @@ class AccessibilityLogger {
             chrome.devtools.inspectedWindow.eval(`window.location.href`, (result, isException) => {
                 if (!isException && result !== lastUrl) {
                     if (lastUrl !== '') {
-                        console.log('Navigation detected from', lastUrl, 'to', result);
                         this.handleNavigation(result);
                     }
                     lastUrl = result;
@@ -87,8 +86,6 @@ class AccessibilityLogger {
      * Handle navigation to maintain logging
      */
     handleNavigation(newUrl) {
-        console.log('Handling navigation to:', newUrl);
-        
         // Don't clear existing logs on navigation - keep them for comparison
         // But do add a navigation marker
         this.addNavigationMarker(newUrl);
@@ -121,7 +118,6 @@ class AccessibilityLogger {
      * Reconnect to content script after navigation
      */
     reconnectAfterNavigation() {
-        console.log('Reconnecting after navigation...');
         this.connectionEstablished = false;
         this.connectToContentScript();
     }
@@ -193,7 +189,6 @@ class AccessibilityLogger {
      * Connect to content script for accessibility event monitoring
      */
     connectToContentScript() {
-        console.log('Establishing DevTools connection...');
         this.currentTabId = chrome.devtools.inspectedWindow.tabId;
         
         // Immediately send the devtools-ready signal
@@ -209,7 +204,6 @@ class AccessibilityLogger {
         // And periodically retry if connection isn't established
         const connectionRetryInterval = setInterval(() => {
             if (!this.connectionEstablished) {
-                console.log('Retrying DevTools connection...');
                 this.sendDevToolsReadySignal();
             } else {
                 clearInterval(connectionRetryInterval);
@@ -233,17 +227,14 @@ class AccessibilityLogger {
      */
     sendDevToolsReadySignal() {
         const tabId = chrome.devtools.inspectedWindow.tabId;
-        console.log('Sending DevTools ready signal for tab:', tabId);
         
         chrome.runtime.sendMessage({
             action: 'devtools-ready',
             tabId: tabId
         }, (response) => {
             if (chrome.runtime.lastError) {
-                console.error('Failed to notify background script:', chrome.runtime.lastError);
                 this.updateConnectionStatus(false);
             } else {
-                console.log('Successfully notified background script that DevTools is ready:', response);
                 this.connectionEstablished = true;
                 this.updateConnectionStatus(true);
                 
@@ -257,7 +248,6 @@ class AccessibilityLogger {
      * Start polling for events from chrome.storage
      */
     startPollingForEvents() {
-        console.log('Starting to poll for events...');
         this.pollingInterval = setInterval(() => {
             this.fetchEventsFromStorage();
         }, 300); // Poll every 300ms for very responsive logging
@@ -269,7 +259,6 @@ class AccessibilityLogger {
     fetchEventsFromStorage() {
         chrome.storage.local.get(['accessibilityEvents'], (result) => {
             if (chrome.runtime.lastError) {
-                console.error('Failed to fetch events from storage:', chrome.runtime.lastError);
                 return;
             }
 
@@ -281,8 +270,6 @@ class AccessibilityLogger {
                 );
 
                 if (newEvents.length > 0) {
-                    console.log('Processing new events:', newEvents.length);
-                    
                     newEvents.forEach(event => {
                         this.addLogEntry(event);
                     });
@@ -317,8 +304,6 @@ class AccessibilityLogger {
     addLogEntry(eventData) {
         if (!this.isLoggingEnabled) return;
 
-        console.log('Adding log entry:', eventData.type, eventData);
-
         const entry = {
             id: eventData.id || (Date.now() + Math.random()),
             ...eventData,
@@ -327,7 +312,6 @@ class AccessibilityLogger {
 
         // Check if entry already exists
         if (this.logEntries.some(existing => existing.id === entry.id)) {
-            console.log('Event already exists, skipping:', entry.id);
             return;
         }
 
@@ -685,7 +669,6 @@ class AccessibilityLogger {
      * Handle panel shown event
      */
     onPanelShown() {
-        console.log('Panel shown, establishing connection...');
         this.announce("Accessibility Logger panel opened");
         
         // Re-establish connection
@@ -695,6 +678,28 @@ class AccessibilityLogger {
         // Start polling if not already started
         if (!this.pollingInterval) {
             this.startPollingForEvents();
+        }
+    }
+
+    /**
+     * Close current expanded details
+     */
+    closeCurrentDialog() {
+        // Close any expanded details
+        const expandedEntries = document.querySelectorAll('.log-entry.expanded');
+        expandedEntries.forEach(entry => {
+            const entryId = entry.getAttribute('data-entry-id');
+            const logEntry = this.logEntries.find(e => e.id == entryId);
+            if (logEntry) {
+                logEntry.expanded = false;
+                entry.classList.remove('expanded');
+                const details = entry.querySelector('.entry-expanded-details');
+                if (details) details.remove();
+            }
+        });
+
+        if (expandedEntries.length > 0) {
+            this.announce("Closed expanded details");
         }
     }
 
@@ -729,7 +734,6 @@ class AccessibilityLogger {
 
 // Initialize the Accessibility Logger when the panel loads
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Panel DOM loaded, initializing Accessibility Logger...');
     window.accessibilityLogger = new AccessibilityLogger();
 });
 
