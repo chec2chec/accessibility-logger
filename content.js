@@ -1,7 +1,6 @@
 /**
  * Content script for Accessibility Logger
- * Monitors accessibility events on web pages and sends them to background script
- * Includes enhanced arrow key navigation with text content logging
+ * Monitors only Tab-triggered focus changes and arrow key navigation
  */
 
 // Prevent multiple injections and handle reinitialization
@@ -124,16 +123,6 @@
         }
 
         /**
-         * Get current line text
-         */
-        getCurrentLineText() {
-            if (this.currentLineIndex >= 0 && this.currentLineIndex < this.textLines.length) {
-                return this.textLines[this.currentLineIndex].text;
-            }
-            return null;
-        }
-
-        /**
          * Get next line text
          */
         getNextLineText() {
@@ -158,24 +147,6 @@
         }
 
         /**
-         * Find line index based on currently focused element
-         */
-        findLineFromElement(element) {
-            if (!element) return -1;
-            
-            // Find the closest text line that belongs to this element or its children
-            for (let i = 0; i < this.textLines.length; i++) {
-                const line = this.textLines[i];
-                if (element.contains(line.element) || line.element.contains(element) || line.element === element) {
-                    this.currentLineIndex = i;
-                    return i;
-                }
-            }
-            
-            return -1;
-        }
-
-        /**
          * Get character-level navigation text
          */
         getCharacterNavigation(direction) {
@@ -197,6 +168,34 @@
         }
 
         /**
+         * Get current line text
+         */
+        getCurrentLineText() {
+            if (this.currentLineIndex >= 0 && this.currentLineIndex < this.textLines.length) {
+                return this.textLines[this.currentLineIndex].text;
+            }
+            return null;
+        }
+
+        /**
+         * Find line index based on currently focused element
+         */
+        findLineFromElement(element) {
+            if (!element) return -1;
+            
+            // Find the closest text line that belongs to this element or its children
+            for (let i = 0; i < this.textLines.length; i++) {
+                const line = this.textLines[i];
+                if (element.contains(line.element) || line.element.contains(element) || line.element === element) {
+                    this.currentLineIndex = i;
+                    return i;
+                }
+            }
+            
+            return -1;
+        }
+
+        /**
          * Refresh text content (call after page changes)
          */
         refresh() {
@@ -207,7 +206,7 @@
 
     /**
      * Accessibility Event Monitor
-     * Enhanced with text content logging for arrow key navigation
+     * Simplified to only track Tab-triggered focus changes and arrow key navigation
      */
     class AccessibilityMonitor {
         constructor() {
@@ -217,6 +216,7 @@
             this.eventListeners = [];
             this.connectionCheckInterval = null;
             this.textReader = new TextReader();
+            this.lastKeyPressed = null; // Track the last key pressed
             
             this.init();
         }
@@ -225,7 +225,6 @@
             this.setupConnectionCheck();
             this.setupRuntimeMessageListener();
             this.setupFocusMonitoring();
-            this.setupAriaMonitoring();
             this.setupKeyboardMonitoring();
             this.setupNavigationListener();
             console.log('Accessibility Logger: Content script monitoring started');
@@ -360,10 +359,15 @@
         }
 
         /**
-         * Monitor focus changes
+         * Monitor focus changes - only log if caused by Tab key
          */
         setupFocusMonitoring() {
             const focusListener = (e) => {
+                // Only log focus changes if the last key pressed was Tab
+                if (this.lastKeyPressed !== 'Tab') {
+                    return;
+                }
+
                 const element = e.target;
                 
                 // Update text reader position based on focused element
@@ -375,6 +379,7 @@
                     id: Date.now() + Math.random(),
                     element: this.getElementInfo(element),
                     details: {
+                        triggeredByTab: true,
                         focusable: element.tabIndex >= 0,
                         visible: this.isElementVisible(element),
                         hasAriaLabel: !!element.getAttribute('aria-label'),
@@ -383,28 +388,14 @@
                     }
                 };
                 
-                console.log('Focus event detected:', eventData);
+                console.log('Tab-triggered focus event detected:', eventData);
                 this.queueOrSendEvent(eventData);
-            };
-
-            const blurListener = (e) => {
-                const element = e.target;
-                const eventData = {
-                    type: 'blur',
-                    timestamp: Date.now(),
-                    id: Date.now() + Math.random(),
-                    element: this.getElementInfo(element),
-                    details: {
-                        relatedTarget: e.relatedTarget ? this.getElementInfo(e.relatedTarget) : null
-                    }
-                };
                 
-                console.log('Blur event detected:', eventData);
-                this.queueOrSendEvent(eventData);
+                // Reset the last key pressed after processing
+                this.lastKeyPressed = null;
             };
 
             document.addEventListener('focus', focusListener, true);
-            document.addEventListener('blur', blurListener, true);
             
             this.eventListeners.push({ 
                 target: document, 
@@ -412,94 +403,24 @@
                 listener: focusListener, 
                 options: true 
             });
-            this.eventListeners.push({ 
-                target: document, 
-                event: 'blur', 
-                listener: blurListener, 
-                options: true 
-            });
 
             console.log('Focus monitoring setup complete');
         }
 
         /**
-         * Monitor ARIA attribute changes
-         */
-        setupAriaMonitoring() {
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'attributes') {
-                        const attributeName = mutation.attributeName;
-                        
-                        if (attributeName?.startsWith('aria-') || attributeName === 'role') {
-                            const element = mutation.target;
-                            const eventData = {
-                                type: 'aria-change',
-                                timestamp: Date.now(),
-                                id: Date.now() + Math.random(),
-                                element: this.getElementInfo(element),
-                                details: {
-                                    attribute: attributeName,
-                                    oldValue: mutation.oldValue,
-                                    newValue: element.getAttribute(attributeName),
-                                    elementVisible: this.isElementVisible(element)
-                                }
-                            };
-                            
-                            console.log('ARIA change detected:', eventData);
-                            this.queueOrSendEvent(eventData);
-                        }
-                    } else if (mutation.type === 'childList') {
-                        // Monitor for live region updates
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === Node.ELEMENT_NODE) {
-                                const liveRegion = this.findLiveRegion(node);
-                                if (liveRegion) {
-                                    const eventData = {
-                                        type: 'live-region-update',
-                                        timestamp: Date.now(),
-                                        id: Date.now() + Math.random(),
-                                        element: this.getElementInfo(liveRegion),
-                                        details: {
-                                            addedContent: node.textContent?.substring(0, 200),
-                                            ariaLive: liveRegion.getAttribute('aria-live'),
-                                            ariaAtomic: liveRegion.getAttribute('aria-atomic')
-                                        }
-                                    };
-                                    
-                                    console.log('Live region update detected:', eventData);
-                                    this.queueOrSendEvent(eventData);
-                                }
-                            }
-                        });
-                    }
-                });
-            });
-
-            observer.observe(document, {
-                attributes: true,
-                attributeOldValue: true,
-                childList: true,
-                subtree: true,
-                attributeFilter: [
-                    'role', 'aria-label', 'aria-labelledby', 'aria-describedby',
-                    'aria-expanded', 'aria-hidden', 'aria-live', 'aria-atomic',
-                    'aria-busy', 'aria-checked', 'aria-disabled', 'aria-selected',
-                    'aria-pressed', 'aria-current', 'aria-invalid'
-                ]
-            });
-
-            this.observers.push(observer);
-            console.log('ARIA monitoring setup complete');
-        }
-
-        /**
-         * Monitor keyboard interactions with enhanced arrow key text logging
+         * Monitor keyboard interactions - only track Tab and Arrow keys
          */
         setupKeyboardMonitoring() {
             const keydownListener = (e) => {
-                // Only log meaningful keyboard interactions
-                if (this.isSignificantKeyEvent(e)) {
+                // Track Tab key for focus monitoring
+                if (e.key === 'Tab') {
+                    this.lastKeyPressed = 'Tab';
+                    // Don't log Tab key itself, only the resulting focus change
+                    return;
+                }
+
+                // Only log arrow key presses
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                     let textContent = null;
                     let navigationDirection = null;
 
@@ -511,6 +432,7 @@
                             navigationDirection = 'previous';
                         } else {
                             textContent = 'Beginning of content reached';
+                            navigationDirection = 'previous';
                         }
                     } else if (e.key === 'ArrowDown') {
                         const nextText = this.textReader.getNextLineText();
@@ -519,17 +441,24 @@
                             navigationDirection = 'next';
                         } else {
                             textContent = 'End of content reached';
+                            navigationDirection = 'next';
                         }
                     } else if (e.key === 'ArrowLeft') {
                         const charText = this.textReader.getCharacterNavigation('previous');
                         if (charText) {
                             textContent = `Character navigation: "${charText}"`;
                             navigationDirection = 'previous';
+                        } else {
+                            textContent = 'Beginning of line reached';
+                            navigationDirection = 'previous';
                         }
                     } else if (e.key === 'ArrowRight') {
                         const charText = this.textReader.getCharacterNavigation('next');
                         if (charText) {
                             textContent = `Character navigation: "${charText}"`;
+                            navigationDirection = 'next';
+                        } else {
+                            textContent = 'End of line reached';
                             navigationDirection = 'next';
                         }
                     }
@@ -541,13 +470,7 @@
                         element: this.getElementInfo(e.target),
                         details: {
                             key: e.key,
-                            code: e.code,
-                            altKey: e.altKey,
-                            ctrlKey: e.ctrlKey,
-                            shiftKey: e.shiftKey,
-                            metaKey: e.metaKey,
-                            isNavigation: this.isNavigationKey(e.key),
-                            isScreenReaderKey: this.isScreenReaderKey(e),
+                            isArrowKey: true,
                             textContent: textContent,
                             navigationDirection: navigationDirection,
                             currentLineIndex: this.textReader.currentLineIndex,
@@ -555,8 +478,13 @@
                         }
                     };
                     
-                    console.log('Keyboard event detected:', eventData);
+                    console.log('Arrow key event detected:', eventData);
                     this.queueOrSendEvent(eventData);
+                }
+
+                // Clear last key pressed for non-Tab keys to prevent false focus logging
+                if (e.key !== 'Tab') {
+                    this.lastKeyPressed = null;
                 }
             };
 
@@ -627,73 +555,6 @@
                    style.visibility !== 'hidden' && 
                    style.opacity !== '0' &&
                    element.offsetParent !== null;
-        }
-
-        /**
-         * Find live region ancestor
-         */
-        findLiveRegion(element) {
-            let current = element;
-            while (current && current !== document) {
-                if (current.getAttribute?.('aria-live')) {
-                    return current;
-                }
-                current = current.parentElement;
-            }
-            return null;
-        }
-
-        /**
-         * Check if key event is significant for accessibility
-         */
-        isSignificantKeyEvent(e) {
-            // Navigation keys
-            if (this.isNavigationKey(e.key)) return true;
-            
-            // Screen reader specific keys
-            if (this.isScreenReaderKey(e)) return true;
-            
-            // Action keys on interactive elements
-            if ((e.key === 'Enter' || e.key === ' ') && this.isInteractiveElement(e.target)) {
-                return true;
-            }
-            
-            // Escape key
-            if (e.key === 'Escape') return true;
-            
-            return false;
-        }
-
-        /**
-         * Check if key is a navigation key
-         */
-        isNavigationKey(key) {
-            return ['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 
-                    'Home', 'End', 'PageUp', 'PageDown'].includes(key);
-        }
-
-        /**
-         * Check if key combination is screen reader specific
-         */
-        isScreenReaderKey(e) {
-            // Common NVDA key combinations
-            if (e.ctrlKey && e.altKey) return true;
-            if (e.key === 'Insert') return true;
-            if (e.ctrlKey && ['h', 'l', 'k', 'f', 'g', 't', 'b'].includes(e.key)) return true;
-            
-            return false;
-        }
-
-        /**
-         * Check if element is interactive
-         */
-        isInteractiveElement(element) {
-            const interactiveTags = ['button', 'a', 'input', 'select', 'textarea'];
-            const interactiveRoles = ['button', 'link', 'textbox', 'listbox', 'option', 'tab'];
-            
-            return interactiveTags.includes(element.tagName?.toLowerCase()) ||
-                   interactiveRoles.includes(element.getAttribute('role')) ||
-                   element.tabIndex >= 0;
         }
 
         /**
